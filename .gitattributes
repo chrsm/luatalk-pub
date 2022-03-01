@@ -1,0 +1,3 @@
+*.yue linguist-language=moonscript
+static/* linguist-vendored
+templates/* linguist-vendored
