@@ -1,0 +1,15 @@
+import "yue" as :p, :to_lua
+
+unpackstr = (fp) ->
+  n = fp\read 8
+    |> unpack "i8", _
+  fp\read n
+    |> unpack "c#{ n }", _
+
+stringFromFile = with? fp
+  unpackstr fp
+
+unless stringFromFile
+  error "damn it isn't there"
+
+export unpackstr

@@ -1,0 +1,16 @@
+export macro ppdebug = (...) ->
+  import getenv from os
+
+  getenv("DEBUG") and "require(\"vendor.prettyprint\").pprint(#{ ... })" or ""
+
+-- if DEBUG isn't set at build time, this code isn't even included in the 
+-- resulting lua files
+$ppdebug something_internal
+
+macro compile_time_hash = (str) ->
+  import "md5" as h32
+  str = str\gsub "\"", ""
+  "\"#{ h32.tohex str }\""
+
+-- abcdef123456 in raw lua output, not "real key name"
+a[$compile_time_hash("real key name")] = 1234

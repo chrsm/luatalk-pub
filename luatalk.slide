@@ -1,0 +1,374 @@
+# Learn You Some Lua For Great Good!
+
+2022-03-01
+
+chrsm
+$WORK presentation
+
+## WTF is Lua?
+
+- dynamically typed scripting language, originally developed at PUC Rio in '93
+- designed to be embedded into software, but can be used standalone
+
+It's used in..
+
+- neovim!
+- games: too many to list; big names: WoW, Roblox, Dota 2, etc
+- popular software: Adobe products, Autodesk, Reason, etc
+- popular dev tools/services: Redis, Nginx/OpenResty, HAProxy
+- OS services/tools: FreeBSD's bootloader, OpenWRT, etc
+- malware! You know you've made it when your language is embedded in malware!
+
+
+## Why is Lua good?
+
+- Small 30k LoC codebase (for std dist)
+- VM model is easy to understand and work with; controlling the VM as a host or module writer is easy
+- Simple syntax - very few keywords in standard lua
+- Coroutines are first-class: no async/callback hell
+- Fast enough for a dynamic language, incredibly fast with LuaJIT
+
+
+## Personal Gripes
+
+While Lua is one of my favorite languages and it's a tool I constantly reach 
+for, there are some issues I have with it:
+
+- multiple versions: 5.1 and 5.2 are usually well supported, 5.3+ is oft-ignored
+- different environments: Lua standard, LuaJIT, Luau
+- package management is terrible (luarocks, etc)
+- compiling extensions/modules on Windows is terrible
+- dynamic types can be painful sometimes
+- everyone has an opinion.jpeg
+
+
+## Solutions
+
+- versions: I target things 5.2 at max
+- VMs: always luajit + _talked-about-later_
+- package management: I use [peru](https://github.com/buildinspace/peru), a
+  "generic" package manager
+- extensions: I don't have a good solution :-)
+- loose/dynamic nature: tests & assertions for debug builds
+- everyone else's opinions: I've picked my own best practices
+
+
+## Now, let's actually _talk_ about Lua
+
+We'll cover the following in subsequent sections:
+
+- syntax overview
+- conditionals
+- variables/values
+- scopes
+- datatypes 
+- metatables
+- coroutines
+
+
+## Syntax
+
+.play -edit examples/syntax/syntax.go /^-- luastart/,/^-- luaend/
+
+
+## Conditionals, Loops
+
+Lua supports a few different conditionals and looping mechanisms.
+
+- `if`/`elseif`
+- `while`
+- `repeat`/`until`
+- `for`
+
+
+## Conditionals Examples
+
+.play -edit examples/cond/cond.go /^-- luastart/,/^-- luaend/
+
+
+## for example
+
+.play -edit examples/forl/forl.go /^-- luastart/,/^-- luaend/
+
+
+## Variables and Values in Lua
+
+Lua is dynamically typed: variables do not have types, values have types.
+Variables are free for reassignment.
+
+.play -edit examples/variables/example_lua_vars.go /^-- luastart/,/^-- luaend/
+
+
+## Scoping
+
+.play -edit examples/scopes/scopes.go /^-- luastart/,/^-- luaend/
+
+*Note: Idiomatic Lua tends to not modify the global environment.*
+
+
+## Types in Lua
+
+Lua only has a few built-in types:
+
+- `string`
+- `number`
+- `bool`
+- `function`
+- `table` (associative array)
+- `userdata` (types provided by the host)
+- `thread` (coroutines)
+- `nil` (oh no!)
+
+
+## Strings, Numbers, Bools
+
+.play -edit examples/snb/snb.go /^-- luastart/,/^-- luaend/
+
+
+## Functions
+
+Functions are first-class values in Lua and can be assigned to variables or referenced by their name.
+
+.play -edit examples/fn/fn.go /^-- luastart/,/^-- luaend/
+
+
+## Tables
+
+Tables are associative arrays, and the only real "structured type" in Lua.
+
+.play -edit examples/tables/tables.go /^-- luastart/,/^-- luaend/
+
+
+## Table Iteration
+
+- numeric keys: ordered, `ipairs`; indexes start at 1, no crying
+- arbitrary keys: unordered, `pairs`
+
+.play -edit examples/tableit/tableit.go /^-- luastart/,/^-- luaend/
+
+
+## Table Iteration: caveats I
+
+There are a few issues with iterating over numerically indexed tables.
+`ipairs` is implemented by `lbaselib.c` inside of `luaB_pairs`, which calls
+`luaB_next`, which calls `lua_next`... which will stop iterating at the 
+**first sign of nil!**
+
+.play -edit examples/tableit_ipairs/tableit_ipairs.go /^-- luastart/,/^-- luaend/
+
+Maintaining original keys requires use of another table.
+
+## Table Iteration: caveats II
+
+`table.remove` can be used to remove an element, but shifts the rest of the table.
+
+.play -edit examples/tableit_remove/tableit_remove.go /^-- luastart/,/^-- luaend/
+
+In 5.2 or above, you can use metatables to implement custom `pairs`/`ipairs`
+behavior.
+You can _simulate_ this in 5.1 by patching `pairs`, `ipairs` or `next` at
+runtime, but monkey-patching is bad.
+
+
+## Table Sugar
+
+Calling `var_table.funcname(...)` is fine, but what about referencing the table
+itself from one of the functions?
+
+.play -edit examples/table_fn/table_fn.go /^-- luastart/,/^-- luaend/
+
+Using the colon (`:`) syntax is sugar for passing `t_thing.add(t_thing, 2)`.
+
+
+## "Classes"
+
+Classes or otherwise structured types don't natively exist in Lua. However, the `table`
+type is flexible and used to implement them where desired.
+
+.play -edit examples/classes/classes.go /^-- luastart/,/^-- luaend/
+
+
+## Metatables
+
+The way our "class" example works is through the Magic(TM) of Lua's `metatables`.
+Metatables are tables that define behavior of another table in various operations.
+
+We used `__index`, which effectively means "if you don't find key X here, check this other thing".
+
+5.1 supports the following:
+
+- mathy/bits: `add` (+), `sub` (-), `mul` (*), `div` (/), `mod` (%), `pow` (^), `unm` (-)
+- type-y: `len` (#), `eq` (~= or ==), `lt`, `gt`
+- utility: `concat` (a .. b), `call` (eg `Player()`)
+- meta: `index`, `newindex` (x.key = v)
+
+For example, a type implementing a vec2 could have special methods for math
+operations to allow `moved = prev_position ~= cur_position`
+
+
+## Metatable example
+
+.play -edit examples/metatables/metatables.go /^-- luastart/,/^-- luaend/
+
+
+## Coroutines!
+
+As Go devs, I expect you have some experience with or understanding of coroutines.
+Like Go, Lua's coroutines are cooperative, not preemptive. However,
+Go differs in a significant way: you don't have any say in what the scheduler
+is doing at any given time (outside of `runtime.Gosched`). Various runtime bits
+and packages end up calling out to the scheduler (ex blocking syscalls via
+`runtime.entersyscall`).
+
+In the Lua world, coroutines are cooperative from both the consumer and
+producer. While this may be unintuitive, it gives much more control to both
+sides.
+
+- `coroutine.create( ... )`
+- `coroutine.yield( ... )`
+- `coroutine.resume( ... )`
+- `coroutine.status( ... )`
+
+
+## Coroutines example
+
+.play -edit examples/coro/coro.go /^-- luastart/,/^-- luaend/
+
+
+## userdata
+
+`userdata` is any data type provided outside of Lua. Generally, I prefer libs
+that use generics/templates/what-have-you that reduce the amount of work needed
+to get a type implemented, eg `sol2` for cpp.
+
+.image assets/userdata_cpp.png _ 650
+.caption cxx17 w/sol2; some code removed to make this small
+
+But we don't write cpp at work...
+
+
+##
+
+_BLANK, NO SPOILERS_
+
+
+## Time for FUN!
+
+.image assets/luapgo.png
+.caption logos shamelessly stolen from Wikipedia, (C) some people who made them
+
+## Lua + Go!
+
+There are quite a few wrappers over std Lua, as well as LuaJIT; I even once wrote a
+teensy cgo wrapper for luajit: [x/luajit](https://github.com/chrsm/x/blob/master/luajit/luajit.go).
+However, I don't like using cgo, so I often reach for [gopher-lua](https://github.com/yuin/gopher-lua). 
+It's a fully featured implementation of Lua 5.1 _in Go_.
+
+.play -edit examples/golua/golua.go /^//START/,/^//END/
+
+
+## Lua + Go = <3
+
+All the code you're seeing as part of this talk is actually being executed by `gopher-lua`!
+
+.image assets/gopherlua.png _ 750
+.caption hiding some bits for size :-)
+
+
+## Go -> Lua: userdata
+
+`userdata` is anything provided to the VM that isn't standard in Lua.
+For example: I once started working on a window manager for Windows called
+[ghettowm](https://github.com/chrsm/ghettowm/). The window manager itself is
+written in Go, and is scriptable with Lua. Native APIs are implemented (or linked)
+in Go, and exposed to the interpreter.
+
+.play -edit examples/userdatabare/userdatabare.go /^//START/,/^//END/
+
+
+## Go -> Lua: functions/modules
+
+Here's a snippet from a package
+that's provided to the VM from the host language.
+
+.code examples/luavmext/luavmext.go /^//START/,/^//END/
+
+
+## Lua -> Go: anything
+
+This might be obvious, but you can access data from Lua within Go (or any host).
+Getting certain bits of data (locals) is only "useful" or possible when the VM
+is actually running, but after-the-fact you can access globals.
+
+.play -edit examples/luatogo/luatogo.go /^//START/,/^//END/
+
+
+## A Better Way
+
+There's a really good library called `gopher-luar` by layeh that uses `reflect`
+to automatically map any Go value into easily-usable values inside of Lua.
+
+.play -edit examples/userdata/userdata.go /^//START/,/^//END/
+
+
+## ...
+
+I removed several slides related to $WORK. Sorry!
+Basically, these slides talked about how Lua could be used with our current
+code or how I've used it previously.
+
+
+## A Better Lua Experience(TM)
+
+Now that you a bit about Lua and usecases, let's talk about how to improve the
+experience: treat it like a runtime target.
+
+While I still write pure Lua, I more often than not use a [moonscript](https://github.com/leafo/moonscript)
+alternative called [yuescript](https://github.com/pigpigyyy/Yuescript). This 
+provides a nicer syntax as well as lots of nice builtins that transpile down 
+to regular Lua code.
+
+- `class` keyword+implementation w/inheritance
+- `switch`, `unless`, `with`, null-operators (`x?`), pipe operator (`|>`)
+- true `!=` instead of `~=`
+- nicer table declarations
+- macros
+- shorthand func declarations
+- import/export
+
+
+## Example of Yue
+
+.code examples/script.yue
+
+
+## Lua Compilation
+
+.code examples/script.lua
+
+
+## Macros in Yue
+
+I really dig the macro system, and am able to declare at build time
+whether I'm making a debug build or release, making macros like:
+
+.code examples/macros.yue
+
+
+## Lua Compilation
+
+.code examples/macros.lua
+
+
+## Wrapup!
+
+- Lua is small but extensible
+- Lua has very simple syntax
+- There's a lot of software that uses Lua under the hood
+- There are alternatives to the syntax that compile to reasonable code
+- Using Lua as an embedded language allows for anyone to use flexible tooling in a sandboxed environment
+
+
+## Questions?
+
+
